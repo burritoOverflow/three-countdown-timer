@@ -1,11 +1,10 @@
 import * as THREE from "three";
 
 let scene, camera, renderer, digitGroup;
-let timerRunning = false;
-let isPaused = false;
-let totalSeconds = 0;
-let currentSeconds = 0;
+let targetDate; // The date we're counting down to
 let timerInterval;
+let lastRotationY = 0;
+let colonVisible = true;
 
 // Digit patterns for 7-segment display style
 const digitPatterns = {
@@ -32,24 +31,34 @@ function adjustCameraForViewport() {
   // If screen is wide and short, move camera back to fit height
   if (aspect > 1.5) {
     zoom += 10;
+    console.debug("Wide screen detected, adjusting zoom for height.");
   }
 
   // If screen is narrow, move camera back to fit width
   if (aspect < 0.8) {
     zoom += 8;
+    console.debug("Narrow screen detected, adjusting zoom for width.");
   }
 
   // Set camera position
   camera.position.z = zoom;
 }
 
-function setClickHandlers() {
-  document.getElementById("start-button").addEventListener("click", startTimer);
-  document.getElementById("pause-button").addEventListener("click", pauseTimer);
-  document.getElementById("stop-button").addEventListener("click", resetTimer);
-}
-
 function init() {
+  // Set our target date (example: December 31, 2025)
+  targetDate = new Date("December 31, 2025 23:59:59");
+
+  // Display the target date in the header
+  const dateElement = document.getElementById("target-date");
+  dateElement.textContent = targetDate.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(
     75,
@@ -78,10 +87,10 @@ function init() {
 
   camera.position.z = 15;
 
-  setClickHandlers();
-
   adjustCameraForViewport();
-  updateDisplay("00:00:05:00");
+
+  // Start the countdown immediately
+  startCountdown();
 
   animate();
 }
@@ -139,13 +148,15 @@ function createDigit(digit, offsetX = 0) {
   return digitGroup;
 }
 
-function createColon(offsetX = 0) {
+function createColon(offsetX = 0, isVisible = true) {
   const colonGroup = new THREE.Group();
 
-  const dotGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+  const dotGeometry = new THREE.SphereGeometry(0.2, 8, 8);
   const dotMaterial = new THREE.MeshPhongMaterial({
     color: 0x00ff00,
     emissive: 0x002200,
+    transparent: true,
+    opacity: isVisible ? 1.0 : 0.1,
   });
 
   const topDot = new THREE.Mesh(dotGeometry, dotMaterial);
@@ -160,11 +171,12 @@ function createColon(offsetX = 0) {
   return colonGroup;
 }
 
-function formatTime(seconds) {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
+function formatTimeRemaining(totalSeconds) {
+  const secondsInDay = 86400; // 24 * 60 * 60
+  const days = Math.floor(totalSeconds / secondsInDay);
+  const hours = Math.floor((totalSeconds % secondsInDay) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = Math.floor(totalSeconds % 60);
 
   return `${days.toString().padStart(2, "0")}:${hours
     .toString()
@@ -173,68 +185,45 @@ function formatTime(seconds) {
     .padStart(2, "0")}`;
 }
 
-function startTimer() {
-  if (!timerRunning && !isPaused) {
-    const days = parseInt(document.getElementById("days").value) || 0;
-    const hours = parseInt(document.getElementById("hours").value) || 0;
-    const minutes = parseInt(document.getElementById("minutes").value) || 0;
-    const seconds = parseInt(document.getElementById("seconds").value) || 0;
-
-    totalSeconds = days * 86400 + hours * 3600 + minutes * 60 + seconds;
-    currentSeconds = totalSeconds;
-
-    if (totalSeconds <= 0) {
-      document.getElementById("status").textContent = "Please set a valid time";
-      return;
-    }
-  }
-
-  timerRunning = true;
-  isPaused = false;
-  document.getElementById("status").textContent = "Timer running...";
-
-  timerInterval = setInterval(() => {
-    currentSeconds--;
-    updateDisplay(formatTime(currentSeconds));
-
-    if (currentSeconds <= 0) {
-      clearInterval(timerInterval);
-      timerRunning = false;
-      document.getElementById("status").textContent = "Time's up!";
-
-      // Flash effect
-      digitGroup.children.forEach((child) => {
-        child.children.forEach((segment) => {
-          if (segment.material) {
-            segment.material.color.setHex(0xff0000);
-            segment.material.emissive.setHex(0x440000);
-          }
-        });
-      });
-    }
-  }, 1000);
+function startCountdown() {
+  updateCountdown();
+  timerInterval = setInterval(updateCountdown, 1000);
 }
 
-function pauseTimer() {
-  if (timerRunning) {
+function updateCountdown() {
+  const now = new Date().getTime();
+  const timeDifference = targetDate.getTime() - now;
+
+  // toggle colon visibility every second
+  colonVisible = !colonVisible;
+
+  if (timeDifference <= 0) {
     clearInterval(timerInterval);
-    timerRunning = false;
-    isPaused = true;
-    document.getElementById("status").textContent = "Timer paused";
+    updateDisplay("00:00:00:00");
+
+    const statusElement = document.getElementById("status");
+    if (statusElement) {
+      statusElement.textContent = "Event has arrived!";
+    }
+
+    digitGroup.children.forEach((child) => {
+      child.children.forEach((segment) => {
+        if (segment.material) {
+          segment.material.color.setHex(0xff0000);
+          segment.material.emissive.setHex(0x440000);
+        }
+      });
+    });
+
+    return;
   }
-}
 
-function resetTimer() {
-  clearInterval(timerInterval);
-  timerRunning = false;
-  isPaused = false;
-  currentSeconds = 0;
-  document.getElementById("status").textContent = "Ready to start";
-  updateDisplay("00:00:05:00");
-}
+  // Convert milliseconds to seconds
+  const totalSeconds = Math.floor(timeDifference / 1000);
 
-// Add at the top with other global variables
-let lastRotationY = 0;
+  // Update the display
+  updateDisplay(formatTimeRemaining(totalSeconds), colonVisible);
+}
 
 function animate() {
   requestAnimationFrame(animate);
@@ -249,7 +238,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-function updateDisplay(timeString) {
+function updateDisplay(timeString, showColons = true) {
   // Save the current rotation
   const currentRotation = digitGroup.rotation.y;
 
@@ -279,7 +268,7 @@ function updateDisplay(timeString) {
 
   chars.forEach((char, index) => {
     if (char === ":") {
-      digitGroup.add(createColon(xOffset / scaleFactor));
+      digitGroup.add(createColon(xOffset / scaleFactor, showColons));
       xOffset += 1.5 * scaleFactor;
     } else {
       digitGroup.add(createDigit(char, xOffset / scaleFactor));
@@ -296,12 +285,6 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   adjustCameraForViewport();
-
-  if (timerRunning) {
-    updateDisplay(formatTime(currentSeconds));
-  } else {
-    updateDisplay("00:00:05:00");
-  }
 });
 
 init();
