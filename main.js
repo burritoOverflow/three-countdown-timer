@@ -1,10 +1,15 @@
 import * as THREE from "three";
 
 let scene, camera, renderer, digitGroup;
-let targetDate; // The date we're counting down to
+const targetDate = new Date("December 31, 2025 23:59:59");
 let timerInterval;
 let lastRotationY = 0;
 let colonVisible = true;
+let shouldRotate = true;
+
+const DIGIT_WIDTH = 2.5; // Width of each digit in world units
+const COLON_WIDTH = 1.5; // Width of each colon in world units
+const VIEWPORT_USAGE = 0.8; // Use 80% of viewport width for the display
 
 // Digit patterns for 7-segment display style
 const digitPatterns = {
@@ -21,43 +26,16 @@ const digitPatterns = {
   ":": [0, 0, 0, 0, 0, 0, 0], // colon (special case)
 };
 
-function adjustCameraForViewport() {
-  // Adjust camera position based on viewport size
-  const aspect = window.innerWidth / window.innerHeight;
-
-  // Base zoom level, adjusted for aspect ratio
-  let zoom = 15;
-
-  // If screen is wide and short, move camera back to fit height
-  if (aspect > 1.5) {
-    zoom += 10;
-    console.debug("Wide screen detected, adjusting zoom for height.");
-  }
-
-  // If screen is narrow, move camera back to fit width
-  if (aspect < 0.8) {
-    zoom += 8;
-    console.debug("Narrow screen detected, adjusting zoom for width.");
-  }
-
-  // Set camera position
-  camera.position.z = zoom;
-}
-
 function init() {
-  // Set our target date (example: December 31, 2025)
-  targetDate = new Date("December 31, 2025 23:59:59");
-
-  // Display the target date in the header
-  const dateElement = document.getElementById("target-date");
-  dateElement.textContent = targetDate.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  document.getElementById("target-date").textContent =
+    targetDate.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(
@@ -66,9 +44,9 @@ function init() {
     0.1,
     1000
   );
+
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setClearColor("black", 1);
   document.getElementById("container").appendChild(renderer.domElement);
 
   const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
@@ -85,14 +63,45 @@ function init() {
   digitGroup = new THREE.Group();
   scene.add(digitGroup);
 
-  camera.position.z = 15;
+  window.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() === "r") {
+      shouldRotate = !shouldRotate;
+    }
+  });
 
-  adjustCameraForViewport();
-
-  // Start the countdown immediately
+  // Position camera based on screen size
+  adjustCameraPosition();
   startCountdown();
-
   animate();
+}
+
+function adjustCameraPosition() {
+  // Base camera positions
+  const baseZ = 20;
+  const baseY = 1.4;
+
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const aspectRatio = viewportWidth / viewportHeight;
+
+  // Set a consistent camera position that will work across screen sizes
+  // Our updateDisplay function will handle the proper scaling and positioning
+  let zPosition = baseZ;
+
+  // Make minimal adjustments for extreme aspect ratios
+  if (aspectRatio > 2.5) {
+    // Very wide screens may need camera pulled back slightly
+    zPosition = baseZ * 1.1;
+  } else if (aspectRatio < 0.6) {
+    // Very tall/narrow screens may need camera pulled back slightly
+    zPosition = baseZ * 1.2;
+  }
+
+  // Apply the camera position
+  camera.position.z = zPosition;
+  camera.position.y = baseY;
+  camera.lookAt(0, 0, 0);
 }
 
 function createSegment(x, y, z, isHorizontal = false) {
@@ -194,7 +203,7 @@ function updateCountdown() {
   const now = new Date().getTime();
   const timeDifference = targetDate.getTime() - now;
 
-  // toggle colon visibility every second
+  // toggle colon visibility every second (blink the colons)
   colonVisible = !colonVisible;
 
   if (timeDifference <= 0) {
@@ -206,6 +215,7 @@ function updateCountdown() {
       statusElement.textContent = "Event has arrived!";
     }
 
+    // Change color to red when countdown completes
     digitGroup.children.forEach((child) => {
       child.children.forEach((segment) => {
         if (segment.material) {
@@ -215,6 +225,8 @@ function updateCountdown() {
       });
     });
 
+    // Make sure camera position is adjusted for the final display
+    adjustCameraPosition();
     return;
   }
 
@@ -228,18 +240,18 @@ function updateCountdown() {
 function animate() {
   requestAnimationFrame(animate);
 
-  // Subtle rotation animation - continue from last position
-  lastRotationY += 0.005;
-  digitGroup.rotation.y = lastRotationY;
+  if (shouldRotate) {
+    lastRotationY += 0.005;
+    digitGroup.rotation.y = lastRotationY;
+  }
 
   // Gentle floating animation
-  digitGroup.position.y = Math.sin(Date.now() * 0.002) * 0.5;
+  digitGroup.position.y = Math.sin(Date.now() * 0.002);
 
   renderer.render(scene, camera);
 }
 
 function updateDisplay(timeString, showColons = true) {
-  // Save the current rotation
   const currentRotation = digitGroup.rotation.y;
 
   while (digitGroup.children.length > 0) {
@@ -248,31 +260,58 @@ function updateDisplay(timeString, showColons = true) {
 
   const chars = timeString.split("");
 
-  // Calculate the total width needed
-  const totalWidth = chars.length * 2 - 0.5;
-
-  // Calculate optimal scale factor based on viewport width
+  // Calculate viewport dimensions in THREE.js world units
   const viewportWidth = window.innerWidth;
-  let scaleFactor = 1.0;
+  const viewportHeight = window.innerHeight;
+  const aspectRatio = viewportWidth / viewportHeight;
 
-  // Adjust scale for smaller screens
+  // Calculate the field of view in radians
+  const fovRadians = (camera.fov * Math.PI) / 180;
+
+  // Calculate the visible width at the z-distance of our digits
+  // This is how wide the viewport is in world units at our digit's z position
+  const visibleWidth =
+    2 * Math.tan(fovRadians / 2) * camera.position.z * aspectRatio;
+  const visibleHeight = 2 * Math.tan(fovRadians / 2) * camera.position.z;
+
+  // Use our predefined constants for digit and colon widths
+
+  // Calculate total display width (without scaling)
+  let totalDisplayWidth = 0;
+  chars.forEach((char) => {
+    totalDisplayWidth += char === ":" ? COLON_WIDTH : DIGIT_WIDTH;
+  });
+
+  // Calculate the scale that would make the display fit with equal margins on both sides
+  const targetWidth = visibleWidth * VIEWPORT_USAGE;
+  let scaleFactor = targetWidth / totalDisplayWidth;
+
+  // Set reasonable bounds for the scale factor
   if (viewportWidth < 600) {
-    scaleFactor = Math.max(0.7, viewportWidth / 600);
+    // For mobile, don't let it get too small
+    scaleFactor = Math.min(scaleFactor, 0.7);
   }
 
-  // Calculate starting position with scaling in mind
-  let xOffset = -((totalWidth * scaleFactor) / 2);
+  // Clamp the scale factor to reasonable limits
+  scaleFactor = Math.max(0.4, Math.min(scaleFactor, 1.4));
+
+  // Now that we have the scale, calculate the starting x-position
+  // This will ensure equal distance from both edges
+  const scaledDisplayWidth = totalDisplayWidth * scaleFactor;
+  let xOffset = -scaledDisplayWidth / 2;
 
   // Set the scale of the entire digit group
   digitGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
+  // Position digits with proper spacing
   chars.forEach((char, index) => {
     if (char === ":") {
+      // For colons, we need to divide by scaleFactor to counteract the group scaling
       digitGroup.add(createColon(xOffset / scaleFactor, showColons));
-      xOffset += 1.5 * scaleFactor;
+      xOffset += COLON_WIDTH * scaleFactor; // Add colon width (scaled)
     } else {
       digitGroup.add(createDigit(char, xOffset / scaleFactor));
-      xOffset += 2.5 * scaleFactor;
+      xOffset += DIGIT_WIDTH * scaleFactor; // Add digit width (scaled)
     }
   });
 
@@ -284,7 +323,12 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  adjustCameraForViewport();
+
+  // Adjust camera position on resize
+  adjustCameraPosition();
+
+  // Re-render the countdown with the correct scale after resize
+  updateCountdown();
 });
 
 init();
