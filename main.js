@@ -11,7 +11,10 @@ const DIGIT_WIDTH = 2.5; // Width of each digit in world units
 const COLON_WIDTH = 1.5; // Width of each colon in world units
 const VIEWPORT_USAGE = 0.8; // Use 80% of viewport width for the display
 
+const GREEN_COLOR = 0x00ff00;
+
 // Digit patterns for 7-segment display style
+// where key is the digit and value is an array representing the segments that should be 'illuminated' for that given digit.
 const digitPatterns = {
   0: [1, 1, 1, 1, 1, 1, 0],
   1: [0, 1, 1, 0, 0, 0, 0],
@@ -56,18 +59,14 @@ function init() {
   directionalLight.position.set(5, 5, 5);
   scene.add(directionalLight);
 
-  const pointLight = new THREE.PointLight(0x00ff00, 0.5, 100);
+  const pointLight = new THREE.PointLight(GREEN_COLOR, 0.5, 100);
   pointLight.position.set(0, 0, 10);
   scene.add(pointLight);
 
   digitGroup = new THREE.Group();
   scene.add(digitGroup);
 
-  window.addEventListener("keydown", (event) => {
-    if (event.key.toLowerCase() === "r") {
-      shouldRotate = !shouldRotate;
-    }
-  });
+  addEventListeners();
 
   // Position camera based on screen size
   adjustCameraPosition();
@@ -80,7 +79,6 @@ function adjustCameraPosition() {
   const baseZ = 20;
   const baseY = 1.4;
 
-  // Get viewport dimensions
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const aspectRatio = viewportWidth / viewportHeight;
@@ -105,15 +103,19 @@ function adjustCameraPosition() {
 }
 
 function createSegment(x, y, z, isHorizontal = false) {
+  const DEPTH = 0.33; // Depth of the segment
+  const LONG_SEGMENT_LENGTH = 1.5; // Length of horizontal segments
+  const SHORT_SEGMENT_LENGTH = 0.2; // Length of vertical segments
+
   const geometry = isHorizontal
-    ? new THREE.BoxGeometry(1.5, 0.2, 0.3)
-    : new THREE.BoxGeometry(0.2, 1.5, 0.3);
+    ? new THREE.BoxGeometry(LONG_SEGMENT_LENGTH, SHORT_SEGMENT_LENGTH, DEPTH)
+    : new THREE.BoxGeometry(SHORT_SEGMENT_LENGTH, LONG_SEGMENT_LENGTH, DEPTH);
 
   const material = new THREE.MeshPhongMaterial({
-    color: 0x00ff00,
+    color: GREEN_COLOR,
     emissive: 0x002200,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.6,
   });
 
   const segment = new THREE.Mesh(geometry, material);
@@ -145,10 +147,11 @@ function createDigit(digit, offsetX = 0) {
 
   segments.forEach((segment, index) => {
     if (pattern[index]) {
+      // If the segment should be lit
       segment.material.opacity = 1;
       segment.material.emissive.setHex(0x004400);
     } else {
-      segment.material.opacity = 0.1;
+      segment.material.opacity = 0.3; // "off" - segments not explicitly lit; keep them dim as a stylistic choice; toggle opacity here for visibility
       segment.material.emissive.setHex(0x000000);
     }
     digitGroup.add(segment);
@@ -206,6 +209,7 @@ function updateCountdown() {
   // toggle colon visibility every second (blink the colons)
   colonVisible = !colonVisible;
 
+  // timer has expired
   if (timeDifference <= 0) {
     clearInterval(timerInterval);
     updateDisplay("00:00:00:00");
@@ -230,7 +234,6 @@ function updateCountdown() {
     return;
   }
 
-  // Convert milliseconds to seconds
   const totalSeconds = Math.floor(timeDifference / 1000);
 
   // Update the display
@@ -272,9 +275,6 @@ function updateDisplay(timeString, showColons = true) {
   // This is how wide the viewport is in world units at our digit's z position
   const visibleWidth =
     2 * Math.tan(fovRadians / 2) * camera.position.z * aspectRatio;
-  const visibleHeight = 2 * Math.tan(fovRadians / 2) * camera.position.z;
-
-  // Use our predefined constants for digit and colon widths
 
   // Calculate total display width (without scaling)
   let totalDisplayWidth = 0;
@@ -304,7 +304,7 @@ function updateDisplay(timeString, showColons = true) {
   digitGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
   // Position digits with proper spacing
-  chars.forEach((char, index) => {
+  chars.forEach((char, _) => {
     if (char === ":") {
       // For colons, we need to divide by scaleFactor to counteract the group scaling
       digitGroup.add(createColon(xOffset / scaleFactor, showColons));
@@ -319,16 +319,39 @@ function updateDisplay(timeString, showColons = true) {
   digitGroup.rotation.y = currentRotation;
 }
 
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+function addEventListeners() {
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 
-  // Adjust camera position on resize
-  adjustCameraPosition();
+    // Adjust camera position on resize
+    adjustCameraPosition();
 
-  // Re-render the countdown with the correct scale after resize
-  updateCountdown();
-});
+    // Re-render the countdown with the correct scale after resize
+    updateCountdown();
+  });
+
+  function toggleRotation() {
+    shouldRotate = !shouldRotate;
+  }
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() === "r") {
+      toggleRotation();
+    }
+  });
+
+  window.addEventListener("click", toggleRotation);
+
+  window.addEventListener(
+    "touchstart",
+    (event) => {
+      event.preventDefault();
+      toggleRotation();
+    },
+    { passive: false }
+  );
+}
 
 init();
