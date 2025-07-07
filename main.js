@@ -30,15 +30,21 @@ const digitPatterns = {
 };
 
 function init() {
-  document.getElementById("target-date").textContent =
-    targetDate.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const fullDateTimeStr = targetDate.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  document.getElementById(
+    "target-date"
+  ).textContent = `Time remaining until ${fullDateTimeStr}`;
+
+  // change the title of the page
+  document.title = `Countdown to ${fullDateTimeStr}`;
 
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(
