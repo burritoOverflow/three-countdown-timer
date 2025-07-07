@@ -8,7 +8,7 @@ let colonVisible = true;
 let shouldRotate = true;
 
 const DIGIT_WIDTH = 2.5; // Width of each digit in world units
-const COLON_WIDTH = 1.5; // Width of each colon in world units
+const COLON_WIDTH = 2.5; // Width of each colon in world units
 const VIEWPORT_USAGE = 0.8; // Use 80% of viewport width for the display
 
 const GREEN_COLOR = 0x00ff00;
@@ -49,6 +49,7 @@ function init() {
   );
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setClearColor(0x1a1a1a);
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.getElementById("container").appendChild(renderer.domElement);
 
