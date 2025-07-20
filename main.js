@@ -1,11 +1,13 @@
 import * as THREE from "three";
 
 let scene, camera, renderer, digitGroup;
+
 const targetDate = new Date("December 31, 2025 23:59:59");
+
 let timerInterval;
 let lastRotationY = 0;
 let colonVisible = true;
-let shouldRotate = true;
+let shouldRotate = false;
 
 const DIGIT_WIDTH = 2.5; // Width of each digit in world units
 const COLON_WIDTH = 2.5; // Width of each colon in world units
@@ -43,7 +45,6 @@ function init() {
     "target-date"
   ).textContent = `Time remaining until ${fullDateTimeStr}`;
 
-  // change the title of the page
   document.title = `Countdown to ${fullDateTimeStr}`;
 
   scene = new THREE.Scene();
@@ -120,7 +121,6 @@ function createSegment(x, y, z, isHorizontal = false) {
 
   const material = new THREE.MeshPhongMaterial({
     color: GREEN_COLOR,
-    emissive: 0x002200,
     transparent: true,
     opacity: 0.6,
   });
@@ -172,8 +172,7 @@ function createColon(offsetX = 0, isVisible = true) {
 
   const dotGeometry = new THREE.SphereGeometry(0.2, 8, 8);
   const dotMaterial = new THREE.MeshPhongMaterial({
-    color: 0x00ff00,
-    emissive: 0x002200,
+    color: GREEN_COLOR,
     transparent: true,
     opacity: isVisible ? 1.0 : 0.1,
   });
@@ -209,6 +208,7 @@ function startCountdown() {
   timerInterval = setInterval(updateCountdown, 1000);
 }
 
+// invoked during each update (given an interval) to handle countdown logic
 function updateCountdown() {
   const now = new Date().getTime();
   const timeDifference = targetDate.getTime() - now;
