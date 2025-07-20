@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { startTypewriter } from "./typewriter.js";
 
 let scene, camera, renderer, digitGroup;
 
@@ -6,6 +7,8 @@ const targetDate = new Date("December 31, 2025 23:59:59");
 
 let timerInterval;
 let lastRotationY = 0;
+
+// track colon visibility state; toggle every second
 let colonVisible = true;
 
 const animationState = {
@@ -48,11 +51,14 @@ function init() {
     minute: "2-digit",
   });
 
-  document.getElementById(
-    "target-date"
-  ).textContent = `Time remaining until ${fullDateTimeStr}`;
-
-  document.title = `Countdown to ${fullDateTimeStr}`;
+  if (!checkCountdownStatus().expired) {
+    startTypewriter(
+      "target-date",
+      `Time remaining until ${fullDateTimeStr}`,
+      65
+    );
+    document.title = `Countdown to ${fullDateTimeStr}`;
+  }
 
   scene = new THREE.Scene();
 
@@ -220,23 +226,37 @@ function startCountdown() {
   timerInterval = setInterval(updateCountdown, 1000);
 }
 
-// invoked during each update (given an interval) to handle countdown logic
-function updateCountdown() {
+function checkCountdownStatus() {
   const now = new Date().getTime();
   const timeDifference = targetDate.getTime() - now;
+  // meh
+  const result = {
+    expired: timeDifference <= 0,
+    now,
+    timeDifference,
+  };
+  return result;
+}
 
+// invoked during each update (given an interval) to handle countdown logic
+function updateCountdown() {
   // toggle colon visibility every interval (blink the colons)
   colonVisible = !colonVisible;
 
-  const isExpired = timeDifference <= 0;
+  const { expired, _, timeDifference } = checkCountdownStatus();
 
-  if (isExpired) {
+  if (expired) {
     clearInterval(timerInterval);
     updateDisplay("00:00:00:00");
 
     const statusElement = document.getElementById("status");
     if (statusElement) {
       statusElement.textContent = "Event has arrived!";
+    }
+
+    const targetDateElement = document.getElementById("target-date");
+    if (targetDateElement) {
+      targetDateElement.style.display = "none";
     }
 
     // Change color to red when countdown completes
@@ -275,8 +295,9 @@ function doAnimations() {
 function animate() {
   requestAnimationFrame(animate);
 
+  const rotationSpeed = 0.005;
   if (animationState.shouldRotate) {
-    lastRotationY += 0.005;
+    lastRotationY += rotationSpeed;
     digitGroup.rotation.y = lastRotationY;
   }
 
