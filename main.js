@@ -7,13 +7,20 @@ const targetDate = new Date("December 31, 2025 23:59:59");
 let timerInterval;
 let lastRotationY = 0;
 let colonVisible = true;
-let shouldRotate = false;
 
-const DIGIT_WIDTH = 2.5; // Width of each digit in world units
+const animationState = {
+  shouldRotate: false,
+  shouldFloatAnimation: true, // oscillation on the y-axis
+  shouldZoomAnimation: false, // oscillation on the z-axis
+};
+
+const DIGIT_WIDTH = 2.7; // Width of each digit in world units
 const COLON_WIDTH = 2.5; // Width of each colon in world units
-const VIEWPORT_USAGE = 0.8; // Use 80% of viewport width for the display
+
+const VIEWPORT_USAGE = 0.9; // Use a defined percentage of viewport width for the display
 
 const GREEN_COLOR = 0x00ff00;
+const SPECULAR_COLOR = 0x222222;
 
 // Digit patterns for 7-segment display style
 // where key is the digit and value is an array representing the segments that should be 'illuminated' for that given digit.
@@ -48,6 +55,7 @@ function init() {
   document.title = `Countdown to ${fullDateTimeStr}`;
 
   scene = new THREE.Scene();
+
   camera = new THREE.PerspectiveCamera(
     75,
     window.innerWidth / window.innerHeight,
@@ -123,6 +131,8 @@ function createSegment(x, y, z, isHorizontal = false) {
     color: GREEN_COLOR,
     transparent: true,
     opacity: 0.6,
+    specular: SPECULAR_COLOR,
+    shininess: 100,
   });
 
   const segment = new THREE.Mesh(geometry, material);
@@ -175,6 +185,8 @@ function createColon(offsetX = 0, isVisible = true) {
     color: GREEN_COLOR,
     transparent: true,
     opacity: isVisible ? 1.0 : 0.1,
+    specular: SPECULAR_COLOR,
+    shininess: 100,
   });
 
   const topDot = new THREE.Mesh(dotGeometry, dotMaterial);
@@ -213,11 +225,12 @@ function updateCountdown() {
   const now = new Date().getTime();
   const timeDifference = targetDate.getTime() - now;
 
-  // toggle colon visibility every second (blink the colons)
+  // toggle colon visibility every interval (blink the colons)
   colonVisible = !colonVisible;
 
-  // timer has expired
-  if (timeDifference <= 0) {
+  const isExpired = timeDifference <= 0;
+
+  if (isExpired) {
     clearInterval(timerInterval);
     updateDisplay("00:00:00:00");
 
@@ -247,21 +260,40 @@ function updateCountdown() {
   updateDisplay(formatTimeRemaining(totalSeconds), colonVisible);
 }
 
+function doAnimations() {
+  const animationSpeed = 0.002;
+  // 'floating' animation
+  if (animationState.shouldFloatAnimation) {
+    digitGroup.position.y = Math.sin(Date.now() * animationSpeed);
+  }
+  // 'zoom' animation
+  if (animationState.shouldZoomAnimation) {
+    digitGroup.position.z = Math.sin(Date.now() * animationSpeed);
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
 
-  if (shouldRotate) {
+  if (animationState.shouldRotate) {
     lastRotationY += 0.005;
     digitGroup.rotation.y = lastRotationY;
   }
 
-  // Gentle floating animation
-  digitGroup.position.y = Math.sin(Date.now() * 0.002);
+  if (
+    animationState.shouldFloatAnimation ||
+    animationState.shouldZoomAnimation
+  ) {
+    doAnimations();
+  }
 
   renderer.render(scene, camera);
 }
 
-function updateDisplay(timeString, showColons = true) {
+function updateDisplay(
+  timeString,
+  areColonsVisible = true /* should the colon be visible on this invocation*/
+) {
   const currentRotation = digitGroup.rotation.y;
 
   while (digitGroup.children.length > 0) {
@@ -291,16 +323,7 @@ function updateDisplay(timeString, showColons = true) {
 
   // Calculate the scale that would make the display fit with equal margins on both sides
   const targetWidth = visibleWidth * VIEWPORT_USAGE;
-  let scaleFactor = targetWidth / totalDisplayWidth;
-
-  // Set reasonable bounds for the scale factor
-  if (viewportWidth < 600) {
-    // For mobile, don't let it get too small
-    scaleFactor = Math.min(scaleFactor, 0.7);
-  }
-
-  // Clamp the scale factor to reasonable limits
-  scaleFactor = Math.max(0.4, Math.min(scaleFactor, 1.4));
+  const scaleFactor = targetWidth / totalDisplayWidth;
 
   // Now that we have the scale, calculate the starting x-position
   // This will ensure equal distance from both edges
@@ -312,14 +335,25 @@ function updateDisplay(timeString, showColons = true) {
 
   // Position digits with proper spacing
   chars.forEach((char, _) => {
+    let child;
+
     if (char === ":") {
-      // For colons, we need to divide by scaleFactor to counteract the group scaling
-      digitGroup.add(createColon(xOffset / scaleFactor, showColons));
-      xOffset += COLON_WIDTH * scaleFactor; // Add colon width (scaled)
+      // Create the colon at its own origin (0,0)
+      child = createColon(0, areColonsVisible);
+
+      // Set the position of the entire colon group
+      child.position.x = xOffset / scaleFactor + COLON_WIDTH / 2;
+      xOffset += COLON_WIDTH * scaleFactor;
     } else {
-      digitGroup.add(createDigit(char, xOffset / scaleFactor));
-      xOffset += DIGIT_WIDTH * scaleFactor; // Add digit width (scaled)
+      // Create the digit at its own origin (0,0)
+      child = createDigit(char, 0);
+
+      // Set the position of the entire digit group
+      child.position.x = xOffset / scaleFactor + DIGIT_WIDTH / 2;
+      xOffset += DIGIT_WIDTH * scaleFactor;
     }
+
+    digitGroup.add(child);
   });
 
   // Restore the previous rotation rather than setting a new one
@@ -340,7 +374,7 @@ function addEventListeners() {
   });
 
   function toggleRotation() {
-    shouldRotate = !shouldRotate;
+    animationState.shouldRotate = !animationState.shouldRotate;
   }
 
   window.addEventListener("keydown", (event) => {
