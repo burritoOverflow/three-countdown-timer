@@ -3,7 +3,7 @@ import { startTypewriter } from "./typewriter.js";
 
 let scene, camera, renderer, digitGroup;
 
-const targetDate = new Date("December 31, 2025 23:59:59");
+const targetDate = new Date("September 20, 2025 13:42:37");
 
 let timerInterval;
 let lastRotationY = 0;
